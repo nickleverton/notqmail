@@ -1,3 +1,5 @@
+cc -O2 -DINET6
 cc -O2
+cc -O2 -DINET6 -DTCPTO_REFUSED
 
 This will be used to compile .c files.
