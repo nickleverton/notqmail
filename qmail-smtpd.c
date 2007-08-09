@@ -818,7 +818,17 @@ char *arg;
   switch (authcmds[i].fun(arg)) {
     case 0:
       seenauth = 1;
-      protocol = "ESMTPA";
+      if (smtps && ssl) {
+	if (!stralloc_copys(&proto, "ESMTPSA (")
+	  || !stralloc_cats(&proto, SSL_get_cipher(ssl))
+	  || !stralloc_cats(&proto, " encrypted, authenticated)")) 
+	  die_nomem();
+	if (!stralloc_0(&proto)) die_nomem();
+	protocol = proto.s;
+      } else {
+	protocol = "ESMTPA";
+      }
+
       relayclient = "";
       remoteinfo = user.s;
       if (!env_unset("TCPREMOTEINFO")) die_read();
