@@ -101,7 +101,7 @@ void die_ipme()
 void straynewline()
 {
   enew(); eout("Stray newline: quitting\n"); eflush();
-  out("451 See https://cr.yp.to/docs/smtplf.html.\r\n"); flush(); _exit(1);
+  out("553 SMTP error, see https://cr.yp.to/docs/smtplf.html.\r\n"); flush(); _exit(1);
 }
 
 void err_bmf()
