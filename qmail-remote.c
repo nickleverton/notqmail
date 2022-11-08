@@ -1012,6 +1012,7 @@ int main(int argc, char **argv)
     }
     tcpto_err(&ip.ix[i].ip,errno == error_timeout);
     close(smtpfd);
+    substdio_fdbuf(&smtpfrom, saferead, -1, smtpfrombuf, sizeof smtpfrombuf);
   }
   
   temp_noconn();
