@@ -183,6 +183,7 @@ void blast()
   int r;
   char ch;
 
+#if 1
   for (;;) {
     r = substdio_get(&ssin,&ch,1);
     if (r == 0) break;
@@ -207,7 +208,38 @@ void blast()
     }
     substdio_put(&smtpto,"\r\n",2);
   }
- 
+#else
+  int i;
+  int o;
+  char in[4096];
+  char out[4096*2+1];
+  int sol;
+
+  for (sol = 1;;) {
+    r = substdio_get(&ssin,in,sizeof in);
+    if (r == 0) break;
+    if (r == -1) temp_read();
+    for (i = o = 0; i < r; ) {
+      if (sol && in[i] == '.') {
+	out[o++] = '.';
+	out[o++] = in[i++];
+      }
+      sol = 0;
+      while (i < r) {
+	if (in[i] == '\n') {
+	  sol = 1;
+	  ++i;
+	  out[o++] = '\r';
+	  out[o++] = '\n';
+	  break;
+	}
+	out[o++] = in[i++];
+      }
+    }
+    substdio_put(&smtpto,out,o);
+  }
+  if (!sol) perm_partialline();
+#endif
   flagcritical = 1;
   substdio_put(&smtpto,".\r\n",3);
   substdio_flush(&smtpto);
