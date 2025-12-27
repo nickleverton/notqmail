@@ -1211,21 +1211,26 @@ void pass_do()
     }
 }
 
+/* this file is too long ------------------------------------- EXTERNAL TODO */
 
-/* this file is too long ---------------------------------------------- TODO */
-
-datetime_sec nexttodorun;
-DIR *tododir; /* if 0, have to opendir again */
 stralloc todoline = {0};
-char todobuf[SUBSTDIO_INSIZE];
-char todobufinfo[512];
-char todobufchan[CHANNELS][1024];
+char todobuf[2048];
+int todofdin;
+int todofdout;
+int flagtodoalive;
+
+void tododied() { log1("alert: oh no! lost qmail-todo connection! dying...\n");
+ flagexitasap = 1; flagtodoalive = 0; }
 
 void todo_init()
 {
- tododir = 0;
- nexttodorun = now();
- trigger_set();
+  todofdout = 7;
+  todofdin = 8;
+  flagtodoalive = 1;
+  /* sync with external todo */
+  if (write(todofdout, "S", 1) != 1) tododied();
+
+  return;
 }
 
 void todo_selprep(nfds,rfds,wakeup)
@@ -1233,191 +1238,50 @@ int *nfds;
 fd_set *rfds;
 datetime_sec *wakeup;
 {
- if (flagexitasap) return;
- trigger_selprep(nfds,rfds);
- if (tododir) *wakeup = 0;
- if (*wakeup > nexttodorun) *wakeup = nexttodorun;
+  if (flagexitasap) {
+    if (flagtodoalive) {
+      write(todofdout, "X", 1);
+    }
+  }
+  if (flagtodoalive) {
+    FD_SET(todofdin,rfds);
+    if (*nfds <= todofdin)
+      *nfds = todofdin + 1;
+  }
 }
 
-void todo_do(rfds)
-fd_set *rfds;
+void todo_del(char* s)
 {
- struct stat st;
- substdio ss; int fd;
- substdio ssinfo; int fdinfo;
- substdio sschan[CHANNELS];
- int fdchan[CHANNELS];
  int flagchan[CHANNELS];
  struct prioq_elt pe;
- char ch;
- int match;
  unsigned long id;
  unsigned int len;
- direntry *dent;
  int c;
- unsigned long uid;
- unsigned long pid;
-
- fd = -1;
- fdinfo = -1;
- for (c = 0;c < CHANNELS;++c) fdchan[c] = -1;
-
- if (flagexitasap) return;
-
- if (!tododir)
-  {
-   if (!trigger_pulled(rfds))
-     if (recent < nexttodorun)
-       return;
-   trigger_set();
-   tododir = opendir("todo");
-   if (!tododir)
-    {
-     pausedir("todo");
-     return;
-    }
-   nexttodorun = recent + SLEEP_TODO;
-  }
-
- dent = readdir(tododir);
- if (!dent)
-  {
-   closedir(tododir);
-   tododir = 0;
-   return;
-  }
- if (str_equal(dent->d_name,".")) return;
- if (str_equal(dent->d_name,"..")) return;
- len = scan_ulong(dent->d_name,&id);
- if (!len || dent->d_name[len]) return;
-
- fnmake_todo(id);
-
- fd = open_read(fn.s);
- if (fd == -1) { log3("warning: unable to open ",fn.s,"\n"); return; }
-
- fnmake_mess(id);
- /* just for the statistics */
- if (stat(fn.s,&st) == -1)
-  { log3("warning: unable to stat ",fn.s,"\n"); goto fail; }
-
- for (c = 0;c < CHANNELS;++c)
-  {
-   fnmake_chanaddr(id,c);
-   if (unlink(fn.s) == -1) if (errno != error_noent)
-    { log3("warning: unable to unlink ",fn.s,"\n"); goto fail; }
-  }
-
- fnmake_info(id);
- if (unlink(fn.s) == -1) if (errno != error_noent)
-  { log3("warning: unable to unlink ",fn.s,"\n"); goto fail; }
-
- fdinfo = open_excl(fn.s);
- if (fdinfo == -1)
-  { log3("warning: unable to create ",fn.s,"\n"); goto fail; }
-
- strnum3[fmt_ulong(strnum3,id)] = 0;
- log3("new msg ",strnum3,"\n");
 
  for (c = 0;c < CHANNELS;++c) flagchan[c] = 0;
+ switch(*s++) {
+  case 'L':
+    flagchan[0] = 1;
+    break;
+  case 'R':
+    flagchan[1] = 1;
+    break;
+  case 'B':
+    flagchan[0] = 1;
+    flagchan[1] = 1;
+    break;
+  case 'X':
+    break;
+  default:
+    log1("warning: qmail-send unable to understand qmail-todo\n");
+    return;
+ }
 
- substdio_fdbuf(&ss,read,fd,todobuf,sizeof(todobuf));
- substdio_fdbuf(&ssinfo,write,fdinfo,todobufinfo,sizeof(todobufinfo));
-
- uid = 0;
- pid = 0;
-
- for (;;)
-  {
-   if (getln(&ss,&todoline,&match,'\0') == -1)
-    {
-     /* perhaps we're out of memory, perhaps an I/O error */
-     fnmake_todo(id);
-     log3("warning: trouble reading ",fn.s,"\n"); goto fail;
-    }
-   if (!match) break;
-
-   switch(todoline.s[0])
-    {
-     case 'u':
-       scan_ulong(todoline.s + 1,&uid);
-       break;
-     case 'p':
-       scan_ulong(todoline.s + 1,&pid);
-       break;
-     case 'F':
-       if (substdio_putflush(&ssinfo,todoline.s,todoline.len) == -1)
-	{
-	 fnmake_info(id);
-         log3("warning: trouble writing to ",fn.s,"\n"); goto fail;
-	}
-       qslog2("info msg ",strnum3);
-       strnum2[fmt_ulong(strnum2,(unsigned long) st.st_size)] = 0;
-       qslog2(": bytes ",strnum2);
-       log1(" from <"); logsafe(todoline.s + 1);
-       strnum2[fmt_ulong(strnum2,pid)] = 0;
-       qslog2("> qp ",strnum2);
-       strnum2[fmt_ulong(strnum2,uid)] = 0;
-       qslog2(" uid ",strnum2);
-       log1("\n");
-       break;
-     case 'T':
-       switch(rewrite(todoline.s + 1))
-	{
-	 case 0: nomem(); goto fail;
-	 case 2: c = 1; break;
-	 default: c = 0; break;
-        }
-       if (fdchan[c] == -1)
-	{
-	 fnmake_chanaddr(id,c);
-	 fdchan[c] = open_excl(fn.s);
-	 if (fdchan[c] == -1)
-          { log3("warning: unable to create ",fn.s,"\n"); goto fail; }
-	 substdio_fdbuf(&sschan[c]
-	   ,write,fdchan[c],todobufchan[c],sizeof(todobufchan[c]));
-	 flagchan[c] = 1;
-	}
-       if (substdio_bput(&sschan[c],rwline.s,rwline.len) == -1)
-        {
-	 fnmake_chanaddr(id,c);
-         log3("warning: trouble writing to ",fn.s,"\n"); goto fail;
-        }
-       break;
-     default:
-       fnmake_todo(id);
-       log3("warning: unknown record type in ",fn.s,"\n"); goto fail;
-    }
-  }
-
- close(fd); fd = -1;
-
- fnmake_info(id);
- if (substdio_flush(&ssinfo) == -1)
-  { log3("warning: trouble writing to ",fn.s,"\n"); goto fail; }
- if (fsync(fdinfo) == -1)
-  { log3("warning: trouble fsyncing ",fn.s,"\n"); goto fail; }
- close(fdinfo); fdinfo = -1;
-
- for (c = 0;c < CHANNELS;++c)
-   if (fdchan[c] != -1)
-    {
-     fnmake_chanaddr(id,c);
-     if (substdio_flush(&sschan[c]) == -1)
-      { log3("warning: trouble writing to ",fn.s,"\n"); goto fail; }
-     if (fsync(fdchan[c]) == -1)
-      { log3("warning: trouble fsyncing ",fn.s,"\n"); goto fail; }
-     close(fdchan[c]); fdchan[c] = -1;
-    }
-
- fnmake_todo(id);
- if (substdio_putflush(&sstoqc,fn.s,fn.len) == -1) { cleandied(); return; }
- if (substdio_get(&ssfromqc,&ch,1) != 1) { cleandied(); return; }
- if (ch != '+')
-  {
-   log3("warning: qmail-clean unable to clean up ",fn.s,"\n");
-   return;
-  }
+ len = scan_ulong(s,&id);
+ if (!len || s[len]) {
+  log1("warning: qmail-send unable to understand qmail-todo\n");
+  return;
+ }
 
  pe.id = id; pe.dt = now();
  for (c = 0;c < CHANNELS;++c)
@@ -1429,12 +1293,55 @@ fd_set *rfds;
    while (!prioq_insert(&pqdone,&pe)) nomem();
 
  return;
+}
 
- fail:
- if (fd != -1) close(fd);
- if (fdinfo != -1) close(fdinfo);
- for (c = 0;c < CHANNELS;++c)
-   if (fdchan[c] != -1) close(fdchan[c]);
+void todo_do(rfds)
+fd_set *rfds;
+{
+  int r;
+  char ch;
+  int i;
+
+  if (!flagtodoalive) return;
+  if (!FD_ISSET(todofdin,rfds)) return;
+
+  r = read(todofdin,todobuf,sizeof(todobuf));
+  if (r == -1) return;
+  if (r == 0) {
+    if (flagexitasap)
+      flagtodoalive = 0;
+    else
+      tododied();
+    return;
+  }
+  for (i = 0;i < r;++i) {
+    ch = todobuf[i];
+    while (!stralloc_append(&todoline,&ch)) nomem();
+    if (todoline.len > REPORTMAX)
+      todoline.len = REPORTMAX;
+      /* qmail-todo is responsible for keeping it short */
+    if (!ch && (todoline.len > 1)) {
+      switch (todoline.s[0]) {
+	case 'D':
+	  if (flagexitasap) break;
+	  todo_del(todoline.s + 1);
+	  break;
+	case 'L':
+	  log1(todoline.s + 1);
+	  break;
+	case 'X':
+	  if (flagexitasap)
+	    flagtodoalive = 0;
+	  else
+	    tododied();
+	  break;
+	default:
+	  log1("warning: qmail-send unable to understand qmail-todo: report mangled\n");
+	  break;
+      }
+      todoline.len = 0;
+    }
+  }
 }
 
 
@@ -1503,6 +1410,7 @@ void reread()
    log1("alert: unable to reread controls: unable to switch to home directory\n");
    return;
   }
+ write(todofdout, "H", 1);
  regetcontrols();
  while (chdir("queue") == -1)
   {
@@ -1567,7 +1475,7 @@ int main(void)
  todo_init();
  cleanup_init();
 
- while (!flagexitasap || !del_canexit())
+ while (!flagexitasap || !del_canexit() || flagtodoalive)
   {
    recent = now();
 

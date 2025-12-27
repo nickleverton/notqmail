@@ -822,7 +822,7 @@ dnsptr dnsip dnsfq hostname ipmeprint qreceipt qbiff \
 forward preline condredirect bouncesaying except maildirmake \
 maildir2mbox install instpackage instchown \
 instcheck home home+df proc proc+df binm1 binm1+df binm2 binm2+df \
-binm3 binm3+df update_tmprsadh
+binm3 binm3+df update_tmprsadh qmail-todo
 
 load: \
 make-load warn-auto.sh
@@ -1567,6 +1567,20 @@ qmail-tcpto.o: \
 compile qmail-tcpto.c substdio.h subfd.h substdio.h auto_qmail.h byte.h \
 fmt.h ip.h lock.h error.h exit.h datetime.h now.h datetime.h open.h
 	./compile qmail-tcpto.c
+
+qmail-todo: \
+load qmail-todo.o control.o constmap.o trigger.o fmtqfn.o \
+readsubdir.o case.a ndelay.a getln.a sig.a open.a stralloc.a \
+substdio.a error.a str.a fs.a auto_qmail.o auto_split.o
+	./load qmail-todo control.o constmap.o trigger.o fmtqfn.o \
+	readsubdir.o case.a ndelay.a getln.a sig.a open.a stralloc.a \
+	substdio.a error.a str.a fs.a auto_qmail.o auto_split.o
+
+qmail-todo.o: \
+compile alloc.h auto_qmail.h byte.h constmap.h control.h direntry.h error.h \
+exit.h fmt.h fmtqfn.h getln.h open.h ndelay.h now.h readsubdir.h readwrite.h \
+scan.h select.h str.h stralloc.h substdio.h trigger.h
+	./compile qmail-todo.c
 
 qmail-upq: \
 warn-auto.sh qmail-upq.sh conf-qmail conf-break conf-split
