@@ -21,6 +21,7 @@
 #include "env.h"
 #include "now.h"
 #include "exit.h"
+#include "noreturn.h"
 #include "rcpthosts.h"
 #include "timeoutread.h"
 #include "timeoutwrite.h"
@@ -29,12 +30,31 @@
 #include "wait.h"
 #include "fd.h"
 #include "base64.h"
+#include "errbits.h"
 
 #define AUTHSLEEP 5
 
+#define enew()  { eout("qmail-smtpd["); epid(); eout("]: "); }
 #define MAXHOPS 100
 unsigned int databytes = 0;
 int timeout = 1200;
+
+char *remoteip="(not yet set)";
+char *remotehost;
+char *remoteinfo;
+char *local;
+char *relayclient;
+
+stralloc mailfrom = {0};
+stralloc rcptto = {0};
+int rcptcount;
+stralloc addr = {0}; /* will be 0-terminated, if addrparse returns 1 */
+
+static void _noreturn_ die_conn()
+{
+  enew(); eout("Write error (disconnect?): quitting\n"); eflush();
+  _exit(1);
+}
 
 GEN_SAFE_TIMEOUTWRITE(safewrite_raw,timeout,fd,_exit(1))
 ssize_t safewrite(int fd, const void *buf, size_t len)
@@ -53,28 +73,91 @@ substdio ssout = SUBSTDIO_FDBUF(safewrite,1,ssoutbuf,sizeof(ssoutbuf));
 void flush() { substdio_flush(&ssout); }
 void out(s) char *s; { substdio_puts(&ssout,s); }
 
-void die_read() { _exit(1); }
-void die_alarm() { out("451 timeout (#4.4.2)\r\n"); flush(); _exit(1); }
-void die_nomem() { out("421 out of memory (#4.3.0)\r\n"); flush(); _exit(1); }
-void die_control() { out("421 unable to read controls (#4.3.0)\r\n"); flush(); _exit(1); }
-void die_ipme() { out("421 unable to figure out my IP addresses (#4.3.0)\r\n"); flush(); _exit(1); }
-void straynewline() { out("451 See https://cr.yp.to/docs/smtplf.html.\r\n"); flush(); _exit(1); }
+void die_read()
+{
+  enew(); eout("Read error (disconnect?): quitting\n"); eflush(); _exit(1);
+}
+void die_alarm()
+{
+  enew(); eout("Connection timed out: quitting\n"); eflush();
+  out("451 timeout (#4.4.2)\r\n"); flush(); _exit(1);
+}
+void die_nomem()
+{
+  enew(); eout("Out of memory: quitting\n"); eflush();
+  out("421 out of memory (#4.3.0)\r\n"); flush(); _exit(1);
+}
+void die_control()
+{
+  enew(); eout("Unable to read controls: quitting\n"); eflush();
+  out("421 unable to read controls (#4.3.0)\r\n"); flush(); _exit(1);
+}
+void die_ipme()
+{
+  enew(); eout("Unable to figure out my IP addresses: quitting\n"); eflush();
+  out("421 unable to figure out my IP addresses (#4.3.0)\r\n"); flush(); _exit(1);
+}
+void straynewline()
+{
+  enew(); eout("Stray newline: quitting\n"); eflush();
+  out("451 See https://cr.yp.to/docs/smtplf.html.\r\n"); flush(); _exit(1);
+}
 
-void err_size() { out("552 sorry, that message size exceeds my databytes limit (#5.3.4)\r\n"); }
-void err_bmf() { out("553 sorry, your envelope sender is in my badmailfrom list (#5.7.1)\r\n"); }
+void err_bmf()
+{
+  enew(); eout("Sender address in badmailfrom\n"); eflush();
+  out("553 sorry, your envelope sender is in my badmailfrom list (#5.7.1)\r\n");
+}
 void err_nogateway()
 {
-  out("553 sorry, that domain isn't in my list of allowed rcpthosts");
-  tls_nogateway();
-  out(" (#5.7.1)\r\n");
+  enew(); eout("Recipient domain not in rcpthosts <"); eoutclean(addr.s); eout(">\n"); eflush();
+  out("553 sorry, that domain isn't in my list of allowed rcpthosts (#5.7.1)\r\n");
 }
-void err_unimpl(arg) char *arg; { out("502 unimplemented (#5.5.1)\r\n"); }
-void err_syntax() { out("555 syntax error (#5.5.4)\r\n"); }
-void err_wantmail() { out("503 MAIL first (#5.5.1)\r\n"); }
-void err_wantrcpt() { out("503 RCPT first (#5.5.1)\r\n"); }
-void err_noop(arg) char *arg; { out("250 ok\r\n"); }
-void err_vrfy(arg) char *arg; { out("252 send some mail, i'll try my best\r\n"); }
-void err_qqt() { out("451 qqt failure (#4.3.0)\r\n"); }
+void err_unimpl(arg) char *arg;
+{
+  enew(); eout("Unimplemented command <"); eoutclean(arg); eout(">\n"); eflush();
+  out("502 unimplemented (#5.5.1)\r\n");
+}
+void err_syntax(cmd) char *cmd;
+{
+  enew(); eout2(cmd," with too long address ("); eoutulong((unsigned long)addr.len); eout(" bytes) given\n"); eflush();
+  out("555 syntax error (#5.5.4)\r\n");
+}
+void err_wantmail()
+{
+  enew(); eout("Attempted RCPT or DATA before MAIL\n"); eflush();
+  out("503 MAIL first (#5.5.1)\r\n");
+}
+void err_wantrcpt()
+{
+  enew(); eout("Attempted DATA before RCPT\n"); eflush();
+  out("503 RCPT first (#5.5.1)\r\n");
+}
+void err_noop(arg) char *arg;
+{
+  enew(); eout("NOOP\n"); eflush();
+  out("250 ok\r\n");
+}
+void err_vrfy(arg) char *arg;
+{
+  enew(); eout("VRFY requested\n"); eflush();
+  out("252 send some mail, i'll try my best\r\n");
+}
+void err_qqt()
+{
+  enew(); eout("qqt failure\n"); eflush();
+  out("451 qqt failure (#4.3.0)\r\n");
+}
+void err_hops()
+{
+  enew(); eout("Exceeded hop count\n"); eflush();
+  out("554 too many hops, this message is looping (#5.4.6)\r\n");
+}
+void err_databytes()
+{
+  enew(); eout("Exceeded DATABYTES limit\n"); eflush();
+  out("552 sorry, that message size exceeds my databytes limit (#5.3.4)\r\n");
+}
 
 int err_child() { out("454 oops, problem with child and I can't auth (#4.3.0)\r\n"); return -1; }
 int err_fork() { out("454 oops, child won't start and I can't auth (#4.3.0)\r\n"); return -1; }
@@ -101,6 +184,7 @@ void smtp_help(arg) char *arg;
 }
 void smtp_quit(arg) char *arg;
 {
+  enew(); eout("Remote end QUIT: quitting\n"); eflush();
   smtp_greet("221 "); out("\r\n"); flush(); _exit(0);
 }
 
@@ -181,10 +265,9 @@ void setup()
   if (env_get("SMTPS")) { smtps = 1; tls_init(); }
   else
   dohelo(remotehost);
+  enew(); eout("New session\n"); eflush();
 }
 
-
-stralloc addr = {0}; /* will be 0-terminated, if addrparse returns 1 */
 
 int addrparse(arg)
 char *arg;
@@ -271,8 +354,6 @@ int seenauth = 0;
 int seenmail = 0;
 int flagbarf; /* defined if seenmail */
 int flagsize;
-stralloc mailfrom = {0};
-stralloc rcptto = {0};
 stralloc fuser = {0};
 stralloc mfparms = {0};
 
@@ -335,6 +416,7 @@ void mailfrom_parms(arg) char *arg;
 
 void smtp_helo(arg) char *arg;
 {
+  enew(); eout("Received HELO "); eoutclean(arg); eout("\n"); eflush();
   smtp_greet("250 "); out("\r\n");
   seenmail = 0; dohelo(arg);
 }
@@ -343,6 +425,7 @@ void smtp_ehlo(arg) char *arg;
 {
   char size[FMT_ULONG];
   size[fmt_ulong(size,(unsigned int) databytes)] = 0;
+  enew(); eout("Received EHLO "); eoutclean(arg); eout("\n"); eflush();
   smtp_greet("250-");
   if (tls_cert_available())
     out("\r\n250-STARTTLS");
@@ -355,28 +438,30 @@ void smtp_ehlo(arg) char *arg;
 }
 void smtp_rset(arg) char *arg;
 {
-  seenmail = 0; seenauth = 0;
-  mailfrom.len = 0; rcptto.len = 0;
+  seenmail = 0;
+  enew(); eout("Session RSET\n"); eflush();
   out("250 flushed\r\n");
 }
 void smtp_mail(arg) char *arg;
 {
   if (smtpauth)
     if (smtpauth > 10 && !seenauth) { err_submission(); return; }
-  if (!addrparse(arg)) { err_syntax(); return; }
+  if (!addrparse(arg)) { err_syntax("MAIL"); return; }
   flagsize = 0;
   mailfrom_parms(arg);
-  if (flagsize) { err_size(); return; }
+  if (flagsize) { err_databytes(); return; }
   flagbarf = bmfcheck();
   seenmail = 1;
   if (!stralloc_copys(&rcptto,"")) die_nomem();
   if (!stralloc_copys(&mailfrom,addr.s)) die_nomem();
   if (!stralloc_0(&mailfrom)) die_nomem();
+  rcptcount = 0;
+  enew(); eout("Sender <"); eoutclean(mailfrom.s); eout(">\n"); eflush();
   out("250 ok\r\n");
 }
 void smtp_rcpt(arg) char *arg; {
   if (!seenmail) { err_wantmail(); return; }
-  if (!addrparse(arg)) { err_syntax(); return; }
+  if (!addrparse(arg)) { err_syntax("RCPT"); return; }
   if (flagbarf) { err_bmf(); return; }
   if (relayclient) {
     --addr.len;
@@ -388,6 +473,8 @@ void smtp_rcpt(arg) char *arg; {
   if (!stralloc_cats(&rcptto,"T")) die_nomem();
   if (!stralloc_cats(&rcptto,addr.s)) die_nomem();
   if (!stralloc_0(&rcptto)) die_nomem();
+  ++rcptcount;
+  enew(); eout("Recipient <"); eoutclean(addr.s); eout(">\n"); eflush();
   out("250 ok\r\n");
 }
 
@@ -409,6 +496,7 @@ substdio ssin = SUBSTDIO_FDBUF(saferead,0,ssinbuf,sizeof(ssinbuf));
 
 struct qmail qqt;
 unsigned int bytestooverflow = 0;
+unsigned int messagebytes = 0;
 
 void put(ch)
 char *ch;
@@ -416,6 +504,7 @@ char *ch;
   if (bytestooverflow)
     if (!--bytestooverflow)
       qmail_fail(&qqt);
+  messagebytes++;
   qmail_put(&qqt,ch,1);
 }
 
@@ -492,6 +581,10 @@ void acceptmessage(qp) unsigned long qp;
   accept_buf[fmt_ulong(accept_buf,qp)] = 0;
   out(accept_buf);
   out("\r\n");
+  enew(); eout3("Message accepted, qp ",accept_buf," (");
+  eoutulong((unsigned long)rcptcount); eout(" recipients, ");
+  eoutulong((unsigned long)messagebytes); eout(" bytes)\n");
+  eflush();
 }
 
 void smtp_data(arg) char *arg; {
@@ -503,6 +596,7 @@ void smtp_data(arg) char *arg; {
   if (!rcptto.len) { err_wantrcpt(); return; }
   seenmail = 0;
   if (databytes) bytestooverflow = databytes + 1;
+  messagebytes = 0;
   if (qmail_open(&qqt) == -1) { err_qqt(); return; }
   qp = qmail_qp(&qqt);
   out("354 go ahead\r\n");
@@ -516,11 +610,15 @@ void smtp_data(arg) char *arg; {
  
   qqx = qmail_close(&qqt);
   if (!*qqx) { acceptmessage(qp); return; }
-  if (hops) { out("554 too many hops, this message is looping (#5.4.6)\r\n"); return; }
-  if (databytes) if (!bytestooverflow) { err_size(); return; }
+  if (hops) { err_hops(); return; }
+  if (databytes) if (!bytestooverflow) { err_databytes(); return; }
   if (*qqx == 'D') out("554 "); else out("451 ");
   out(qqx + 1);
   out("\r\n");
+  enew(); eout("Message rejected (");
+  if (*qqx == 'D') eout("554 "); else eout("451 ");
+  eoutclean(qqx + 1); eout(")\n");
+  eflush();
 }
 
 /* this file is too long ----------------------------------------- SMTP AUTH */

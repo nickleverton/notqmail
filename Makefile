@@ -542,6 +542,10 @@ envread.o: \
 compile envread.c env.h str.h
 	./compile envread.c
 
+errbits.o: \
+compile errbits.c stralloc.h readwrite.h errbits.h substdio.h fmt.h exit.h
+	./compile errbits.c
+
 error.a: \
 makelib error_str.o error_temp.o
 	./makelib error.a error_str.o error_temp.o
@@ -1500,13 +1504,14 @@ qmail-smtpd: \
 load qmail-smtpd.o rcpthosts.o commands.o timeoutread.o \
 timeoutwrite.o ip.o ipme.o ipalloc.o control.o constmap.o received.o \
 date822fmt.o qmail.o cdb.a fd.a wait.a datetime.a getln.a \
-open.a sig.a case.a env.a stralloc.a substdio.a error.a str.a \
+open.a sig.a case.a env.a stralloc.a substdio.a errbits.o error.a str.a \
 fs.a auto_qmail.o base64.o socket.lib
 	./load qmail-smtpd rcpthosts.o commands.o timeoutread.o \
 	timeoutwrite.o ip.o ipme.o ipalloc.o control.o constmap.o \
 	tls.o tls_smtpd.o ssl_timeoutio.o ndelay.a -lssl -lcrypto \
 	received.o date822fmt.o qmail.o cdb.a fd.a wait.a \
 	datetime.a getln.a open.a sig.a case.a env.a stralloc.a \
+	errbits.o \
 	substdio.a error.a str.a fs.a auto_qmail.o base64.o  `cat \
 	socket.lib`
 
@@ -1518,6 +1523,7 @@ compile qmail-smtpd.c sig.h readwrite.h stralloc.h gen_alloc.h \
 substdio.h alloc.h auto_qmail.h control.h received.h constmap.h \
 error.h ipme.h ip.h ipalloc.h ip.h gen_alloc.h ip.h qmail.h \
 substdio.h str.h fmt.h scan.h byte.h case.h env.h now.h datetime.h \
+errbits.h \
 exit.h rcpthosts.h timeoutread.h timeoutwrite.h commands.h fd.h base64.h
 	./compile qmail-smtpd.c
 
