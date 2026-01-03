@@ -2,10 +2,13 @@
 
 SHELL=/bin/sh
 NROFF=nroff
+RELEASE_VERSION=1.09
 
 default: it
 
 .PHONY: check clean default it man test
+.PHONY: release-changes release-commit release-copyright
+.PHONY: release-signatures release-tag release-tag-push release-tarballs
 
 .SUFFIXES: .0 .1 .5 .7 .8
 
@@ -24,6 +27,42 @@ default: it
 .8.0:
 	$(NROFF) -man $< >$@; \
 	ret=$$?; [ 0 = $$ret ] || rm -f $@; exit $$ret
+
+release-changes:
+	( grep 'version: notqmail $(RELEASE_VERSION)\.$$' CHANGES.md >/dev/null 2>&1 ) || \
+	( echo - `date '+%Y%m%d'` version: notqmail $(RELEASE_VERSION).; \
+	cat CHANGES.md; \
+	) > CHANGES.md.new; \
+	[ ! -f CHANGES.md.new ] || mv -f CHANGES.md.new CHANGES.md
+
+release-commit:
+	git commit -S -m 'This is notqmail $(RELEASE_VERSION).' CHANGES.md COPYRIGHT Makefile
+
+release-copyright:
+	[ `git diff master COPYRIGHT | wc -l` -gt 0 ] || \
+	( previous=`grep version: CHANGES.md | grep -v '$(RELEASE_VERSION)\.$$' | head -n 1 | sed -e 's|.* ||' -e 's|\.$$||'`; \
+	echo; echo notqmail-$(RELEASE_VERSION); \
+	yes - | head -n `echo notqmail-$(RELEASE_VERSION) | tr -d '\n' | wc -c` | tr -d '\n'; \
+	echo; \
+	echo No copyright is claimed by the distributors of notqmail for changes from; \
+	echo $$previous to $(RELEASE_VERSION).; \
+	) >> COPYRIGHT
+
+release-signatures:
+	gpg --detach-sign -a -o notqmail-$(RELEASE_VERSION).tar.gz.sig notqmail-$(RELEASE_VERSION).tar.gz
+	gpg --detach-sign -a -o notqmail-$(RELEASE_VERSION).tar.xz.sig notqmail-$(RELEASE_VERSION).tar.xz
+
+release-tag:
+	git tag -s notqmail-$(RELEASE_VERSION)
+
+release-tag-push:
+	git push origin notqmail-$(RELEASE_VERSION)
+
+release-tarballs:
+	git archive --prefix=notqmail-$(RELEASE_VERSION)/ -o notqmail-$(RELEASE_VERSION).tar notqmail-$(RELEASE_VERSION)
+	gzip --best --keep notqmail-$(RELEASE_VERSION).tar
+	xz --best --keep notqmail-$(RELEASE_VERSION).tar
+	rm -f notqmail-$(RELEASE_VERSION).tar
 
 addresses.0: \
 addresses.5
@@ -179,6 +218,10 @@ auto-str conf-groups
 auto_groupq.o: \
 compile auto_groupq.c
 	./compile auto_groupq.c
+
+base64.o: \
+compile base64.c base64.h stralloc.h substdio.h str.h
+	./compile base64.c
 
 binm1: \
 binm1.sh conf-qmail
@@ -672,6 +715,10 @@ hier.o: \
 compile hier.c auto_qmail.h auto_split.h auto_uids.h fmt.h fifo.h hier.h
 	./compile hier.c
 
+hmac_md5.o : \
+compile hmac_md5.c hmac_md5.h global.h
+	./compile hmac_md5.c
+
 home: \
 home.sh conf-qmail
 	cat home.sh \
@@ -775,7 +822,7 @@ dnsptr dnsip dnsfq hostname ipmeprint qreceipt qbiff \
 forward preline condredirect bouncesaying except maildirmake \
 maildir2mbox install instpackage instchown \
 instcheck home home+df proc proc+df binm1 binm1+df binm2 binm2+df \
-binm3 binm3+df qmail-todo
+binm3 binm3+df update_tmprsadh qmail-todo
 
 load: \
 make-load warn-auto.sh
@@ -884,6 +931,10 @@ envelopes.0 forgeries.0
 
 mbox.0: \
 mbox.5
+
+md5c.o : \
+compile md5c.c md5.h
+	./compile md5c.c
 
 myctime.o: \
 compile myctime.c datetime.h fmt.h myctime.h
@@ -1349,12 +1400,16 @@ qmail-remote: \
 load qmail-remote.o control.o constmap.o timeoutread.o timeoutwrite.o \
 timeoutconn.o tcpto.o dns.o ip.o ipalloc.o ipme.o quote.o \
 ndelay.a case.a sig.a open.a lock.a getln.a stralloc.a \
-substdio.a error.a str.a fs.a auto_qmail.o dns.lib socket.lib
+substdio.a error.a str.a fs.a auto_qmail.o \
+base64.o md5c.o hmac_md5.o \
+dns.lib socket.lib
 	./load qmail-remote control.o constmap.o timeoutread.o \
 	timeoutwrite.o timeoutconn.o tcpto.o dns.o ip.o \
+	tls.o ssl_timeoutio.o -lssl -lcrypto \
 	ipalloc.o ipme.o quote.o ndelay.a case.a sig.a open.a \
 	lock.a getln.a stralloc.a substdio.a error.a \
-	str.a fs.a auto_qmail.o  `cat dns.lib` `cat socket.lib`
+	base64.o md5c.o hmac_md5.o \
+	str.a fs.a auto_qmail.o `cat dns.lib` `cat socket.lib`
 
 qmail-remote.0: \
 qmail-remote.8
@@ -1365,7 +1420,7 @@ subfd.h substdio.h scan.h case.h error.h auto_qmail.h control.h dns.h \
 alloc.h quote.h ip.h ipalloc.h ip.h gen_alloc.h ipme.h ip.h ipalloc.h \
 gen_alloc.h gen_allocdefs.h str.h now.h datetime.h exit.h constmap.h \
 tcpto.h readwrite.h timeoutconn.h timeoutread.h timeoutwrite.h oflops.h \
-error.h
+error.h base64.h hmac_md5.h
 	./compile qmail-remote.c
 
 qmail-rspawn: \
@@ -1446,12 +1501,13 @@ load qmail-smtpd.o rcpthosts.o commands.o timeoutread.o \
 timeoutwrite.o ip.o ipme.o ipalloc.o control.o constmap.o received.o \
 date822fmt.o qmail.o cdb.a fd.a wait.a datetime.a getln.a \
 open.a sig.a case.a env.a stralloc.a substdio.a error.a str.a \
-fs.a auto_qmail.o socket.lib
+fs.a auto_qmail.o base64.o socket.lib
 	./load qmail-smtpd rcpthosts.o commands.o timeoutread.o \
 	timeoutwrite.o ip.o ipme.o ipalloc.o control.o constmap.o \
+	tls.o tls_smtpd.o ssl_timeoutio.o ndelay.a -lssl -lcrypto \
 	received.o date822fmt.o qmail.o cdb.a fd.a wait.a \
 	datetime.a getln.a open.a sig.a case.a env.a stralloc.a \
-	substdio.a error.a str.a fs.a auto_qmail.o  `cat \
+	substdio.a error.a str.a fs.a auto_qmail.o base64.o  `cat \
 	socket.lib`
 
 qmail-smtpd.0: \
@@ -1462,7 +1518,7 @@ compile qmail-smtpd.c sig.h readwrite.h stralloc.h gen_alloc.h \
 substdio.h alloc.h auto_qmail.h control.h received.h constmap.h \
 error.h ipme.h ip.h ipalloc.h ip.h gen_alloc.h ip.h qmail.h \
 substdio.h str.h fmt.h scan.h byte.h case.h env.h now.h datetime.h \
-exit.h rcpthosts.h timeoutread.h timeoutwrite.h commands.h
+exit.h rcpthosts.h timeoutread.h timeoutwrite.h commands.h fd.h base64.h
 	./compile qmail-smtpd.c
 
 qmail-start: \
@@ -1899,6 +1955,24 @@ timeoutwrite.o: \
 compile timeoutwrite.c timeoutwrite.h select.h error.h readwrite.h
 	./compile timeoutwrite.c
 
+qmail-smtpd: tls.o ssl_timeoutio.o tls_smtpd.o ndelay.a
+qmail-remote: tls.o ssl_timeoutio.o
+qmail-smtpd.o: tls.h ssl_timeoutio.h
+qmail-remote.o: tls.h ssl_timeoutio.h
+
+tls.o: \
+compile tls.c exit.h error.h
+	./compile tls.c
+
+tls_smtpd.o: \
+compile tls_smtpd.c constmap.h control.h env.h ssl_timeoutio.h stralloc.h \
+substdio.h tls.h
+	./compile tls_smtpd.c
+
+ssl_timeoutio.o: \
+compile ssl_timeoutio.c ssl_timeoutio.h select.h error.h ndelay.h
+	./compile ssl_timeoutio.c
+
 token822.o: \
 compile token822.c stralloc.h gen_alloc.h alloc.h str.h token822.h \
 gen_alloc.h gen_allocdefs.h oflops.h error.h
@@ -1934,3 +2008,26 @@ compile wait_nohang.c haswaitp.h
 wait_pid.o: \
 compile wait_pid.c error.h haswaitp.h
 	./compile wait_pid.c
+
+cert cert-req: \
+Makefile-cert
+	@$(MAKE) -sf $< $@
+
+Makefile-cert: \
+conf-qmail conf-users conf-groups Makefile-cert.mk
+	@cat Makefile-cert.mk \
+	| sed s}QMAIL}"`head -1 conf-qmail`"}g \
+	> $@
+
+update_tmprsadh: \
+conf-qmail conf-users conf-groups update_tmprsadh.sh
+	@cat update_tmprsadh.sh\
+	| sed s}UGQMAILD}"`head -2 conf-users|tail -1`:`head -1 conf-groups`"}g \
+	| sed s}QMAIL}"`head -1 conf-qmail`"}g \
+	> $@
+	chmod 755 update_tmprsadh
+
+tmprsadh: \
+update_tmprsadh
+	echo "Creating new temporary RSA and DH parameters"
+	./update_tmprsadh
