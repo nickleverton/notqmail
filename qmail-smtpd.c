@@ -24,6 +24,7 @@
 #include "rcpthosts.h"
 #include "timeoutread.h"
 #include "timeoutwrite.h"
+#include "tls_smtpd.h"
 #include "commands.h"
 #include "wait.h"
 #include "fd.h"
@@ -35,7 +36,16 @@
 unsigned int databytes = 0;
 int timeout = 1200;
 
-GEN_SAFE_TIMEOUTWRITE(safewrite,timeout,fd,_exit(1))
+GEN_SAFE_TIMEOUTWRITE(safewrite_raw,timeout,fd,_exit(1))
+ssize_t safewrite(int fd, const void *buf, size_t len)
+{
+  if (ssl && fd == ssl_wfd) {
+    int r = ssl_timeoutwrite(timeout, ssl_rfd, ssl_wfd, ssl, buf, len);
+    if (r == 0 || r == -1) _exit(1);
+    return r;
+  }
+  return safewrite_raw(fd, buf, len);
+}
 
 char ssoutbuf[512];
 substdio ssout = SUBSTDIO_FDBUF(safewrite,1,ssoutbuf,sizeof(ssoutbuf));
@@ -52,7 +62,12 @@ void straynewline() { out("451 See https://cr.yp.to/docs/smtplf.html.\r\n"); flu
 
 void err_size() { out("552 sorry, that message size exceeds my databytes limit (#5.3.4)\r\n"); }
 void err_bmf() { out("553 sorry, your envelope sender is in my badmailfrom list (#5.7.1)\r\n"); }
-void err_nogateway() { out("553 sorry, that domain isn't in my list of allowed rcpthosts (#5.7.1)\r\n"); }
+void err_nogateway()
+{
+  out("553 sorry, that domain isn't in my list of allowed rcpthosts");
+  tls_nogateway();
+  out(" (#5.7.1)\r\n");
+}
 void err_unimpl(arg) char *arg; { out("502 unimplemented (#5.5.1)\r\n"); }
 void err_syntax() { out("555 syntax error (#5.5.4)\r\n"); }
 void err_wantmail() { out("503 MAIL first (#5.5.1)\r\n"); }
@@ -89,7 +104,7 @@ void smtp_quit(arg) char *arg;
   smtp_greet("221 "); out("\r\n"); flush(); _exit(0);
 }
 
-char *protocol;
+const char *protocol = "SMTP";
 char *remoteip;
 char *remotehost;
 char *remoteinfo;
@@ -139,7 +154,6 @@ void setup()
   if (x) { scan_ulong(x,&u); databytes = u; }
   if (!(databytes + 1)) --databytes;
  
-  protocol = "SMTP";
   remoteip = env_get("TCPREMOTEIP");
   if (!remoteip) remoteip = "unknown";
   local = env_get("TCPLOCALHOST");
@@ -151,6 +165,7 @@ void setup()
   if (!remotehost) remotehost = "unknown";
   remoteinfo = env_get("TCPREMOTEINFO");
   relayclient = env_get("RELAYCLIENT");
+
   auth = env_get("SMTPAUTH");
   if (auth) {
     smtpauth = 1;
@@ -162,6 +177,9 @@ void setup()
     if (case_starts(auth,"!cram")) smtpauth = 12;
     if (case_starts(auth,"!+cram")) smtpauth = 13;
   }
+
+  if (env_get("SMTPS")) { smtps = 1; tls_init(); }
+  else
   dohelo(remotehost);
 }
 
@@ -244,6 +262,7 @@ int addrallowed()
   int r;
   r = rcpthosts(addr.s,str_len(addr.s));
   if (r == -1) die_control();
+  if (r == 0) if (tls_verify()) r = -2;
   return r;
 }
 
@@ -319,11 +338,15 @@ void smtp_helo(arg) char *arg;
   smtp_greet("250 "); out("\r\n");
   seenmail = 0; dohelo(arg);
 }
+/* ESMTP extensions are published here */
 void smtp_ehlo(arg) char *arg;
 {
   char size[FMT_ULONG];
   size[fmt_ulong(size,(unsigned int) databytes)] = 0;
-  smtp_greet("250-"); out("\r\n250-PIPELINING\r\n250-8BITMIME\r\n");
+  smtp_greet("250-");
+  if (tls_cert_available())
+    out("\r\n250-STARTTLS");
+  out("\r\n250-PIPELINING\r\n250-8BITMIME\r\n");
   if (smtpauth == 1 || smtpauth == 11) out("250-AUTH LOGIN PLAIN\r\n");
   if (smtpauth == 2 || smtpauth == 12) out("250-AUTH CRAM-MD5\r\n");
   if (smtpauth == 3 || smtpauth == 13) out("250-AUTH LOGIN PLAIN CRAM-MD5\r\n");
@@ -372,6 +395,9 @@ ssize_t saferead(int fd, void *buf, size_t len)
 {
   ssize_t r;
   flush();
+  if (ssl && fd == ssl_rfd)
+    r = ssl_timeoutread(timeout, ssl_rfd, ssl_wfd, ssl, buf, len);
+  else
   r = timeoutread(timeout,fd,buf,len);
   if (r == -1) if (errno == error_timeout) die_alarm();
   if (r == 0 || r == -1) die_read();
@@ -718,6 +744,7 @@ struct commands smtpcommands[] = {
 , { "ehlo", smtp_ehlo, flush }
 , { "rset", smtp_rset, 0 }
 , { "help", smtp_help, flush }
+, { "starttls", smtp_tls, flush_io }
 , { "noop", err_noop, flush }
 , { "vrfy", err_vrfy, flush }
 , { 0, err_unimpl, flush }
