@@ -102,6 +102,34 @@ START_TEST(test_blast_barecr)
 }
 END_TEST
 
+START_TEST(test_blast_barecr_4k)
+{
+  /* Check correct operation when bare CR is in last position of buffer.
+     Assumes 4k buffer size in "blast" */
+  char dotcrlf_4k[4095 + 9 + 1];
+  char barecr_4k[4095 + 5 + 1];
+
+  char ch = '0';
+  memset(dotcrlf_4k, 0, sizeof(dotcrlf_4k));
+  memset(barecr_4k, 0, sizeof(barecr_4k));
+  for (int i = 0; i < 4095; i++) {
+    barecr_4k[i] = ch;
+    dotcrlf_4k[i] = ch;
+    ch = (ch == '9' ? '0' : ++ch);
+  }
+  strcat(barecr_4k, "\rlf\n");
+  ck_assert_uint_eq( strlen(barecr_4k), 4099 );
+  strcat(dotcrlf_4k, "\r\nlf\r\n.\r\n");
+  ck_assert_uint_eq( strlen(dotcrlf_4k), 4104 );
+
+  ssin_setup(barecr_4k, dotcrlf_4k);
+
+  blast();
+
+  ck_assert_uint_eq(writeoffs, strlen(dotcrlf_4k));
+}
+END_TEST
+
 START_TEST(test_blast_crlf)
 {
   const char *dotcrlf = "..\r\n.\r\n";
@@ -114,6 +142,34 @@ START_TEST(test_blast_crlf)
 }
 END_TEST
 
+START_TEST(test_blast_crlf_4k)
+{
+  /* Check correct operation when CR+LF is split across buffer boundary.
+     Assumes 4k buffer size in "blast" */
+  char dotcrlf_4k[4095 + 5 + 1];
+  char crlf_4k[4095 + 2 + 1];
+
+  char ch = '0';
+  memset(dotcrlf_4k, 0, sizeof(dotcrlf_4k));
+  memset(crlf_4k, 0, sizeof(crlf_4k));
+  for (int i = 0; i < 4095; i++) {
+    crlf_4k[i] = ch;
+    dotcrlf_4k[i] = ch;
+    ch = (ch == '9' ? '0' : ++ch);
+  }
+  strcat(crlf_4k, "\r\n");
+  ck_assert_uint_eq( strlen(crlf_4k), 4097 );
+  strcat(dotcrlf_4k, "\r\n.\r\n");
+  ck_assert_uint_eq( strlen(dotcrlf_4k), 4100 );
+
+  ssin_setup(crlf_4k, dotcrlf_4k);
+
+  blast();
+
+  ck_assert_uint_eq(writeoffs, strlen(dotcrlf_4k));
+}
+END_TEST
+
 TCase
 *blast_something(void)
 {
@@ -122,7 +178,9 @@ TCase
   tcase_add_test(tc, test_blast_empty);
   tcase_add_test(tc, test_blast_dot);
   tcase_add_test(tc, test_blast_barecr);
+  tcase_add_test(tc, test_blast_barecr_4k);
   tcase_add_test(tc, test_blast_crlf);
+  tcase_add_test(tc, test_blast_crlf_4k);
 
   return tc;
 }
