@@ -325,31 +325,48 @@ void blast()
   int r;
   char ch;
 
-  for (;;) {
-    r = substdio_get(&ssin,&ch,1);
+  int i;
+  int o;
+  char in[4096];
+  char out[4096*2+1];
+  int sol;
+  int barecr;
+
+  for (barecr = 0, sol = 1;;) {
+    r = substdio_get(&ssin,in,sizeof in);
     if (r == 0) break;
     if (r == -1) temp_read();
-    if (ch == '.')
-      substdio_put(&smtpto,".",1);
-    while (ch != '\n') {
-      if (ch == '\r') {
-        r = substdio_get(&ssin, &ch, 1);
-        if (r == 0)
-          break;
-        if (r == -1) temp_read();
-        if (ch != '\n') {
-          substdio_put(&smtpto, "\r\n", 2);
-        } else
-          break;
+    for (i = o = 0; i < r; ) {
+      if (sol && in[i] == '.') {
+	out[o++] = '.';
+	out[o++] = in[i++];
       }
-      substdio_put(&smtpto,&ch,1);
-      r = substdio_get(&ssin,&ch,1);
-      if (r == 0) perm_partialline();
-      if (r == -1) temp_read();
+      sol = 0;
+      while (i < r) {
+	if (in[i] == '\r') {
+	  barecr = 1;
+	  out[o++] = in[i++];
+	  continue;
+	}
+	if (in[i] == '\n') {
+	  sol = 1;
+	  ++i;
+	  if (barecr == 0)
+	    out[o++] = '\r';
+	  out[o++] = '\n';
+	  barecr = 0;
+	  break;
+	}
+	if (barecr == 1)
+	  out[o++] = '\n';
+	out[o++] = in[i++];
+	barecr = 0;
+      }
     }
-    substdio_put(&smtpto,"\r\n",2);
+    substdio_put(&smtpto,out,o);
   }
- 
+  if (!sol) perm_partialline();
+
   flagcritical = 1;
   substdio_put(&smtpto,".\r\n",3);
   substdio_flush(&smtpto);
