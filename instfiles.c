@@ -193,12 +193,3 @@ void z(char *home, char *file, int len, uid_t uid, gid_t gid, int mode)
     strerr_die6sys(111,FATAL,"unable to chmod ",home,"/",file,": ");
   free(dh.s);
 }
-
-/* these are ignored, but hier() passes them to h() and friends */
-uid_t auto_uida = -1;
-uid_t auto_uido = -1;
-uid_t auto_uidq = -1;
-uid_t auto_uidr = -1;
-uid_t auto_uids = -1;
-
-gid_t auto_gidq = -1;

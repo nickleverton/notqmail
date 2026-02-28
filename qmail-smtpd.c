@@ -36,6 +36,7 @@
 
 #define enew()  { eout("qmail-smtpd["); epid(); eout("]: "); }
 #define MAXHOPS 100
+static char     strnum[FMT_ULONG];
 unsigned int databytes = 0;
 int timeout = 1200;
 
@@ -352,6 +353,7 @@ int addrallowed()
 
 int seenauth = 0;
 int seenmail = 0;
+int rcptcount = 0;
 int flagbarf; /* defined if seenmail */
 int flagsize;
 stralloc fuser = {0};
