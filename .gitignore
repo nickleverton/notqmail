@@ -419,3 +419,13 @@ parse_env.o
 dns_text.o
 testfilterargs
 testfilterargs.o
+base64.o
+errbits.o
+hmac_md5.o
+md5c.o
+ssl_timeoutio.o
+tls.o
+tls_smtpd.o
+qmail-todo
+qmail-todo.o
+update_tmprsadh
