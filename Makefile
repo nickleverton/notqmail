@@ -180,6 +180,10 @@ auto_groupq.o: \
 compile auto_groupq.c
 	./compile auto_groupq.c
 
+base64.o: \
+compile base64.c base64.h stralloc.h substdio.h str.h
+	./compile base64.c
+
 binm1: \
 binm1.sh conf-qmail
 	cat binm1.sh \
@@ -2054,7 +2058,7 @@ str_chr.o scan_xlong.o \
 scan_ulong.o mess822_ok.o constmap.o \
 ip.o dns.o ipalloc.o fmt_str.o fmt_ulong.o \
 socket_v6any.o socket_v4mappedprefix.o \
-sgetopt.o subgetopt.o base64sub.o \
+sgetopt.o subgetopt.o base64.o \
 case_diffb.o stralloc.a substdio.a
 	./load surblfilter envread.o strerr_die.o strerr_sys.o \
 	control.o error.a \
@@ -2066,7 +2070,7 @@ case_diffb.o stralloc.a substdio.a
 	scan_ulong.o mess822_ok.o constmap.o \
 	ip.o dns.o ipalloc.o fmt_str.o fmt_ulong.o \
 	socket_v6any.o socket_v4mappedprefix.o \
-	sgetopt.o subgetopt.o base64sub.o \
+	sgetopt.o subgetopt.o base64.o \
 	case_diffb.o stralloc.a substdio.a -lresolv
 
 surblfilter.o: \
@@ -2097,10 +2101,6 @@ tryulong64.c compile load uint64.h1 uint64.h2
 	./tryulong64 ) >/dev/null 2>&1 \
 	&& cat uint64.h1 || cat uint64.h2 ) > uint64.h
 	rm -f tryulong64.o tryulong64
-
-base64sub.o: \
-compile base64sub.c base64.h stralloc.h substdio.h str.h
-	./compile base64sub.c
 
 DKIMHDRS = dkim.h dkimbase.h dkimsign.h dkimverify.h time_t_size.h
 DKIMSRCS = dkimfuncs.cpp dkimbase.cpp
