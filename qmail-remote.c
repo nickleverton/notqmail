@@ -908,7 +908,7 @@ int main(int argc, char **argv)
       authsender[i] = 0;
     }
 
-    if (!stralloc_copys(&relayhost,authsender)) temp_nomem();
+    relayhost = authsender;
     if (!stralloc_copys(&host,authsender)) temp_nomem();
 
   }
