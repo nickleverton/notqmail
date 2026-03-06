@@ -824,7 +824,7 @@ main(int argc, char **argv)
 					base64_decode = 0;
 					continue;
 				}
-				if (b64decode((const unsigned char *) line.s, line.len - 1, &base64out) == -1)
+				if (b64decode(line.s, line.len - 1, &base64out) == -1)
 					die_nomem();
 				ptr = &base64out;
 			} else

@@ -1,7 +1,5 @@
 #include "base64.h"
 #include "stralloc.h"
-#include "substdio.h"
-#include "str.h"
 
 static char *b64alpha =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -10,7 +8,7 @@ static char *b64alpha =
 /* returns 0 ok, 1 illegal, -1 problem */
 
 int b64decode(in,l,out)
-const unsigned char *in;
+const char *in;
 int l;
 stralloc *out; /* not null terminated */
 {
@@ -92,7 +90,7 @@ stralloc *in;
 stralloc *out; /* not null terminated */
 {
   unsigned char a, b, c;
-  int i;
+  unsigned int i;
   char *s;
 
   if (in->len == 0)

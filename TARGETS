@@ -420,7 +420,6 @@ surblfilter.8
 uint64.h
 surblqueue
 surblfilter.0
-base64sub.o
 dktrace.o
 dknewkey
 dknewkey.8
