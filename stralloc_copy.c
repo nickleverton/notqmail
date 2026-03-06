@@ -3,7 +3,7 @@
 
 int stralloc_copy(sato,safrom)
 stralloc *sato;
-stralloc *safrom;
+const stralloc *safrom;
 {
   return stralloc_copyb(sato,safrom->s,safrom->len);
 }

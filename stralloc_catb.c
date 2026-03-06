@@ -5,7 +5,7 @@
 
 int stralloc_catb(sa,s,n)
 stralloc *sa;
-char *s;
+const char *s;
 unsigned int n;
 {
   unsigned int i;
